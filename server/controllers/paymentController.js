@@ -35,6 +35,7 @@ const createPaymentIntent = async (req, res) => {
     }
     
     // Create Stripe PaymentIntent
+    console.log('Using Stripe Secret Key:', stripe.apiKey ? stripe.apiKey.substring(0, 15) + '...' : 'NONE');
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(amount * 100), // Convert to cents
       currency: 'usd',
