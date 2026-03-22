@@ -58,7 +58,10 @@ const sendMessage = async (req, res) => {
     
     let reply = '';
     try {
-      const response = await fetch('https://api.minimax.chat/v1/text/chatcompletion_v2', {
+      const groupId = process.env.MINIMAX_GROUP_ID;
+      const apiUrl = `https://api.minimax.chat/v1/text/chatcompletion_v2${groupId ? `?GroupId=${groupId}` : ''}`;
+
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${process.env.MINIMAX_API_KEY}`,
@@ -72,11 +75,18 @@ const sendMessage = async (req, res) => {
         })
       });
       
-      if (!response.ok) {
-        throw new Error(`MiniMax API error: ${response.status}`);
-      }
-      
       const data = await response.json();
+
+      if (!response.ok) {
+        console.error('MiniMax API error response:', JSON.stringify(data));
+        throw new Error(`MiniMax API error: ${response.status} - ${data?.base_resp?.status_msg || response.statusText}`);
+      }
+
+      if (!data.choices || data.choices.length === 0) {
+        console.error('MiniMax unexpected response:', JSON.stringify(data));
+        throw new Error('MiniMax returned no choices');
+      }
+
       reply = data.choices[0].message.content;
     } catch (apiError) {
       console.error('MiniMax API error:', apiError);
@@ -88,7 +98,7 @@ const sendMessage = async (req, res) => {
       [session_id, 'assistant', reply]
     );
     
-    const finalRemainingMs = Math.max(0, Date.now() - endTime);
+    const finalRemainingMs = Math.max(0, endTime - Date.now());
     
     res.json({
       reply,
