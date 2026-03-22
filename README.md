@@ -124,37 +124,47 @@ The backend enforces session expiry. When a session expires:
 
 ## Project Structure
 
-```
+```text
 ├── server/
 │   ├── index.js          # Express server entry
 │   ├── database.js       # SQLite setup and seed
+│   ├── controllers/      # Route handlers logic
+│   │   ├── agentsController.js
+│   │   ├── authController.js
+│   │   ├── chatController.js
+│   │   ├── paymentController.js
+│   │   └── sessionsController.js
 │   ├── middleware/
 │   │   └── auth.js       # JWT authentication
-│   └── routes/
-│       ├── auth.js       # Register, login
+│   └── routes/           # API routes definitions
 │       ├── agents.js     # Agent endpoints
-│       ├── sessions.js   # Session management
-│       └── chat.js       # Chat with AI
+│       ├── auth.js       # Register, login
+│       ├── chat.js       # Chat with AI
+│       ├── payments.js   # Mock payments endpoints
+│       └── sessions.js   # Session management
 ├── client/
 │   ├── public/
 │   │   └── index.html
 │   ├── src/
-│   │   ├── index.js      # React entry
-│   │   ├── App.js        # Main app with routing
+│   │   ├── index.tsx     # React entry (TypeScript)
+│   │   ├── App.tsx       # Main app with routing
 │   │   ├── App.css       # Styles
-│   │   ├── api.js       # API client
+│   │   ├── services/
+│   │   │   └── api.ts    # API client
+│   │   ├── types/
+│   │   │   └── index.ts  # TypeScript type definitions
 │   │   ├── context/
-│   │   │   └── AuthContext.js
+│   │   │   └── AuthContext.tsx
 │   │   ├── components/
-│   │   │   └── Navbar.js
+│   │   │   └── Navbar.tsx
 │   │   └── pages/
-│   │       ├── Home.js
-│   │       ├── AgentDetail.js
-│   │       ├── HireFlow.js
-│   │       ├── Workspace.js
-│   │       ├── Dashboard.js
-│   │       ├── Login.js
-│   │       └── Signup.js
+│   │       ├── Home.tsx
+│   │       ├── AgentDetail.tsx
+│   │       ├── HireFlow.tsx
+│   │       ├── Workspace.tsx
+│   │       ├── Dashboard.tsx
+│   │       ├── Login.tsx
+│   │       └── Signup.tsx
 │   └── package.json
 ├── package.json
 ├── .env.example
