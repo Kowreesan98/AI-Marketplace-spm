@@ -1,10 +1,93 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { loadStripe } from '@stripe/stripe-js';
+import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import api from '../services/api';
 import { Agent, CreateSessionResponse } from '../types';
 
-const stripePromise = loadStripe('pk_test_placeholder');
+const STRIPE_KEY = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY || 'pk_test_placeholder';
+const stripePromise = loadStripe(STRIPE_KEY);
+
+const CheckoutForm = ({
+  totalCost,
+  totalHours,
+  agentId,
+  paymentIntentId,
+  onSuccess,
+  onError,
+  onBack
+}: {
+  totalCost: number;
+  totalHours: number;
+  agentId: string;
+  paymentIntentId: string;
+  onSuccess: (session: CreateSessionResponse) => void;
+  onError: (msg: string) => void;
+  onBack: () => void;
+}) => {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [processing, setProcessing] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+
+    setProcessing(true);
+    onError('');
+
+    try {
+      const { error, paymentIntent } = await stripe.confirmPayment({
+        elements,
+        confirmParams: {},
+        redirect: 'if_required',
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Payment failed');
+      }
+
+      if (paymentIntent && paymentIntent.status === 'succeeded') {
+        const result = await api.createSession(Number(agentId), totalHours);
+        await api.confirmPayment(paymentIntentId, result.session_id);
+        onSuccess(result);
+      } else {
+        throw new Error('Payment not completed');
+      }
+    } catch (err: any) {
+      onError(err.message || 'An error occurred during payment');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} style={{ width: '100%' }}>
+      <div style={{ padding: '12px 0', minHeight: '200px' }}>
+        <PaymentElement />
+      </div>
+      <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={onBack}
+          disabled={processing}
+          style={{ flex: '1' }}
+        >
+          ← Back
+        </button>
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={!stripe || processing}
+          style={{ flex: '2', padding: '14px' }}
+        >
+          {processing ? 'Processing...' : `Pay $${totalCost}`}
+        </button>
+      </div>
+    </form>
+  );
+};
 
 const HOUR_OPTIONS = [1, 2, 3, 5, 10];
 
@@ -20,7 +103,7 @@ const HireFlow: React.FC = () => {
   const [error, setError] = useState('');
   const [session, setSession] = useState<CreateSessionResponse | null>(null);
   const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
-  const [cardComplete, setCardComplete] = useState(false);
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [cardError, setCardError] = useState('');
 
   useEffect(() => {
@@ -79,8 +162,9 @@ const HireFlow: React.FC = () => {
         Number(agentId),
         agent.name,
         totalHours
-      );
+      ) as any;
       setPaymentIntentId(paymentData.paymentIntentId);
+      setClientSecret(paymentData.clientSecret);
       setStep(2);
     } catch (err: any) {
       setError(err.message || 'Failed to initialize payment');
@@ -89,24 +173,7 @@ const HireFlow: React.FC = () => {
     }
   };
 
-  const handlePayment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setProcessing(true);
-    setCardError('');
 
-    try {
-      if (!paymentIntentId || !agentId) throw new Error('Payment not initialized');
-      const totalHours = getTotalHours();
-      const result = await api.createSession(Number(agentId), totalHours);
-      await api.confirmPayment(paymentIntentId, result.session_id);
-      setSession(result);
-      setStep(3);
-    } catch (err: any) {
-      setCardError(err.message || 'Payment failed. Please try again.');
-    } finally {
-      setProcessing(false);
-    }
-  };
 
   const handleGoToWorkspace = () => {
     if (session) navigate(`/workspace/${session.session_id}`);
@@ -265,63 +332,30 @@ const HireFlow: React.FC = () => {
 
             {/* Card form */}
             <div className="payment-card-form">
-              <h4>💳 Card Details <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '400' }}>(Test Mode)</span></h4>
-
-              <div className="stripe-test-banner">
-                <strong>Stripe Test Mode</strong><br />
-                Use card: <code style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 5px', borderRadius: '3px' }}>4242 4242 4242 4242</code><br />
-                Any future date · Any CVC · Any postal code
-              </div>
-
-              <div className="form-group" style={{ marginBottom: '14px' }}>
-                <label>Card Number</label>
-                <input
-                  id="card-number"
-                  type="text"
-                  placeholder="4242 4242 4242 4242"
-                  className="form-input"
-                  onChange={(e) => setCardComplete(e.target.value.replace(/\s/g, '').length >= 16)}
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div className="form-group" style={{ marginBottom: '14px' }}>
-                  <label>Expiry</label>
-                  <input id="card-expiry" type="text" placeholder="MM/YY" className="form-input" />
+              <h4>💳 Card Details</h4>
+              {clientSecret ? (
+                <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'night' } }}>
+                  <CheckoutForm 
+                    totalCost={getTotalCost()}
+                    totalHours={getTotalHours()}
+                    agentId={agentId!}
+                    paymentIntentId={paymentIntentId!}
+                    onSuccess={(result) => {
+                      setSession(result);
+                      setStep(3);
+                    }}
+                    onError={(msg) => setCardError(msg)}
+                    onBack={() => setStep(1)}
+                  />
+                </Elements>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '30px' }}>
+                  <div className="loading-spinner" style={{ margin: '0 auto' }}></div>
                 </div>
-                <div className="form-group" style={{ marginBottom: '14px' }}>
-                  <label>CVC</label>
-                  <input id="card-cvc" type="text" placeholder="123" className="form-input" />
-                </div>
-              </div>
-
-              <div className="form-group" style={{ marginBottom: '0' }}>
-                <label>Postal Code</label>
-                <input id="card-postal" type="text" placeholder="12345" className="form-input" />
-              </div>
+              )}
             </div>
 
             {cardError && <div className="form-error" style={{ marginBottom: '16px' }}>{cardError}</div>}
-
-            <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
-              <button
-                className="btn btn-secondary"
-                onClick={() => setStep(1)}
-                disabled={processing}
-                style={{ flex: '1' }}
-              >
-                ← Back
-              </button>
-              <button
-                id="pay-btn"
-                className="btn btn-primary"
-                onClick={handlePayment}
-                disabled={processing || !cardComplete}
-                style={{ flex: '2', padding: '14px' }}
-              >
-                {processing ? 'Processing…' : `Pay $${getTotalCost()}`}
-              </button>
-            </div>
 
             <div className="secure-note">
               🔒 Your payment is secured by Stripe
